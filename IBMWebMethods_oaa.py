@@ -12,7 +12,7 @@ load_dotenv()
 def get_token():
 
     # Get token
-    resp = requests.post("http://127.0.0.1:5000/oauth/token", data={
+    resp = requests.post(os.getenv('IBMWebMethods_TokenURL'), data={
         "grant_type": "client_credentials",
         "client_id": os.getenv('client_id'),
         "client_secret": os.getenv('client_secret')
