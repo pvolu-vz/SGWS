@@ -153,6 +153,7 @@ def main():
     custom_app.property_definitions.define_local_user_property('type', OAAPropertyType.STRING)
     custom_app.property_definitions.define_local_user_property('active', OAAPropertyType.BOOLEAN)
     custom_app.property_definitions.define_local_user_property('allowDigestAuth', OAAPropertyType.BOOLEAN)
+    custom_app.property_definitions.define_local_user_property('emailAddresses', OAAPropertyType.STRING_LIST)
     
     #Get Token
     try:
@@ -173,6 +174,7 @@ def main():
         new_user.set_property('type', user.get('type'))
         new_user.set_property('active', user.get('active'))
         new_user.set_property('allowDigestAuth', user.get('allowDigestAuth'))
+        new_user.set_property('emailAddresses', user.get('emailAddresses', []))
 
     #add Groups
     response = get_ibm_webmethods_groups(token)
