@@ -16,6 +16,7 @@ def get_token():
         "grant_type": "client_credentials",
         "client_id": os.getenv('client_id'),
         "client_secret": os.getenv('client_secret')
+        "scope": "profile"
     })
     return resp.json()["access_token"]
 
@@ -192,7 +193,7 @@ def main():
 
     #add Teams/AccessProfiles
     accessProfiles = get_ibm_webmethods_teams(token)
-    for profile in accessProfiles['members']:
+    for profile in accessProfiles['accessProfiles']:
         privilege_str = profile.get('privilege', '')
         permissions = []
         for idx, char in enumerate(privilege_str):
