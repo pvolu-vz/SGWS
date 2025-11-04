@@ -1,13 +1,28 @@
 
 #!env python3
+import argparse
 from oaaclient.client import OAAClient, OAAClientError
 from oaaclient.templates import CustomApplication, OAAPermission, OAAPropertyType
 import os
 import sys
 import requests
+import logging
 
 from dotenv import load_dotenv
+from IBMWebMethods_CacheAuth import logging_in_extract_json
 load_dotenv()
+
+
+def setup_logging(enable_logging=True, log_file=None):
+    if enable_logging:
+        logging.basicConfig(
+            format='%(asctime)s %(levelname)s: %(message)s',
+            level=logging.getLevelName(os.environ.get('LOG_LEVEL', 'INFO').upper()),
+            filename=log_file
+        )
+    else:
+        logging.disable(logging.CRITICAL)
+    return logging.getLogger(__name__)
 
 def get_token():
 
@@ -16,7 +31,7 @@ def get_token():
         "grant_type": "client_credentials",
         "client_id": os.getenv('client_id'),
         "client_secret": os.getenv('client_secret')
-        "scope": "profile"
+        #"scope": "profile"
     })
     return resp.json()["access_token"]
 
@@ -45,183 +60,110 @@ def get_ibm_webmethods_users(token):
     response = requests.get(f'{ibm_webmethods_url}/users', headers=headers)
     return response.json()
 
-def get_ibm_webmethods_teams(token):
-    ibm_webmethods_url = os.getenv('IBMWebMethods_URL')
-    ibm_webmethods_api_key = os.getenv('IBMWebMethods_API_KEY')
-    if None in (ibm_webmethods_url, ibm_webmethods_api_key):
-        print("Unable to find all environment variables for IBM WebMethods")
-        sys.exit(1)
-
-    headers = {
-        'Authorization': f'Bearer {token}',
-        'Accept': 'application/json'
-    }
-
-    response = requests.get(f'{ibm_webmethods_url}/accessProfiles', headers=headers)
-    return response.json()
-
-def get_ibm_webmethods_groups(token):
-    ibm_webmethods_url = os.getenv('IBMWebMethods_URL')
-    ibm_webmethods_api_key = os.getenv('IBMWebMethods_API_KEY')
-    if None in (ibm_webmethods_url, ibm_webmethods_api_key):
-        print("Unable to find all environment variables for IBM WebMethods")
-        sys.exit(1)
-
-    headers = {
-        'Authorization': f'Bearer {token}',
-        'Accept': 'application/json'
-    }
-
-    response = requests.get(f'{ibm_webmethods_url}/groups', headers=headers)
-    return response.json()
-
 def main():
+    # Parse command-line arguments for logging
+    parser = argparse.ArgumentParser(description='IBMWebMethod OAA Script')
+    parser.add_argument('--log', dest='enable_logging', action='store_true', help='Enable logging to file')
+    parser.add_argument('--no-log', dest='enable_logging', action='store_false', help='Disable logging')
+    parser.set_defaults(enable_logging=True)
+    parser.add_argument('--log-file', type=str, default='ibmWebMethodOAA.log', help='Log file name (default: ibmWebMethodOAA.log)')
+    parser.add_argument('--log-level', type=str, default='INFO', choices=['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'], help='Set log level')
+    args = parser.parse_args()
 
+    # Set log level as environment variable for setup_logging
+    os.environ['LOG_LEVEL'] = args.log_level
+    log = setup_logging(args.enable_logging, args.log_file)
 
+    log.info("Starting ConceptOne OAA Script...")
     # Create an instance of the OAA CustomApplication class, modeling the application name and type
     custom_app = CustomApplication(name="IBMWebMethods", application_type="IBMWebMethods")
 
+    log.info("Defining role properties...")
     #Role properties definition
     custom_app.property_definitions.define_local_role_property('id', OAAPropertyType.STRING)
+    custom_app.property_definitions.define_local_role_property('containerId', OAAPropertyType.STRING)
+    custom_app.property_definitions.define_local_role_property('name', OAAPropertyType.STRING)
     custom_app.property_definitions.define_local_role_property('description', OAAPropertyType.STRING)
-    custom_app.property_definitions.define_local_role_property('systemDefined', OAAPropertyType.STRING)
+    custom_app.property_definitions.define_local_role_property('productRole', OAAPropertyType.BOOLEAN)
+    custom_app.property_definitions.define_local_role_property('clientId', OAAPropertyType.STRING)
+    custom_app.property_definitions.define_local_role_property('clientName', OAAPropertyType.STRING)
+    custom_app.property_definitions.define_local_role_property('wellKnowSwagRealmRole', OAAPropertyType.BOOLEAN)
 
-    #Grouop properties definition
-    custom_app.property_definitions.define_local_group_property('description', OAAPropertyType.STRING)
-    custom_app.property_definitions.define_local_group_property('type', OAAPropertyType.STRING)
-    custom_app.property_definitions.define_local_group_property('name', OAAPropertyType.STRING)
-    custom_app.property_definitions.define_local_group_property('systemDefined', OAAPropertyType.BOOLEAN)
-    
- 
-    # In the OAA payload, each permission native to the custom app is mapped to the Veza effective permission (data/non-data C/R/U/D).
-    # Permissions must be defined before they can be referenced, as they are discovered or ahead of time.
-    # For each custom application permission, bind them to the Veza permissions using the `OAAPermission` enum:
-    custom_app.add_custom_permission("ManageAPIs", [OAAPermission.DataRead, OAAPermission.DataWrite,OAAPermission.MetadataWrite, OAAPermission.MetadataRead])
-    custom_app.add_custom_permission("API-Gateway-Administrators", [OAAPermission.MetadataWrite, OAAPermission.MetadataRead])
-    custom_app.add_custom_permission("Manage APIs", [OAAPermission.MetadataCreate, OAAPermission.MetadataDelete, OAAPermission.MetadataWrite, OAAPermission.MetadataRead])
-    custom_app.add_custom_permission("Manage aliases", [OAAPermission.MetadataCreate, OAAPermission.MetadataDelete, OAAPermission.MetadataWrite, OAAPermission.MetadataRead])
-    custom_app.add_custom_permission("Manage policy templates", [OAAPermission.MetadataCreate, OAAPermission.MetadataDelete, OAAPermission.MetadataWrite, OAAPermission.MetadataRead])
-    custom_app.add_custom_permission("Activate / Deactivate APIs", [OAAPermission.MetadataCreate, OAAPermission.MetadataDelete, OAAPermission.MetadataWrite, OAAPermission.MetadataRead])
-    custom_app.add_custom_permission("Manage global policies", [OAAPermission.MetadataCreate, OAAPermission.MetadataDelete, OAAPermission.MetadataWrite, OAAPermission.MetadataRead])
-    custom_app.add_custom_permission("Manage threat protection configurations", [OAAPermission.MetadataCreate, OAAPermission.MetadataDelete, OAAPermission.MetadataWrite, OAAPermission.MetadataRead])
-    custom_app.add_custom_permission("Manage applications", [OAAPermission.MetadataCreate, OAAPermission.MetadataDelete, OAAPermission.MetadataWrite, OAAPermission.MetadataRead])
-    custom_app.add_custom_permission("Activate / Deactivate global policies", [OAAPermission.MetadataCreate, OAAPermission.MetadataDelete, OAAPermission.MetadataWrite, OAAPermission.MetadataRead])
-    custom_app.add_custom_permission("Publish API to service registry", [OAAPermission.MetadataCreate, OAAPermission.MetadataDelete, OAAPermission.MetadataWrite, OAAPermission.MetadataRead])
-    custom_app.add_custom_permission("Publish to API Portal", [OAAPermission.MetadataCreate, OAAPermission.MetadataDelete, OAAPermission.MetadataWrite, OAAPermission.MetadataRead])
-    custom_app.add_custom_permission("Manage portal configurations", [OAAPermission.MetadataCreate, OAAPermission.MetadataDelete, OAAPermission.MetadataWrite, OAAPermission.MetadataRead])
-    custom_app.add_custom_permission("Manage portal themes", [OAAPermission.MetadataCreate, OAAPermission.MetadataDelete, OAAPermission.MetadataWrite, OAAPermission.MetadataRead])
-    custom_app.add_custom_permission("Manage portal pages", [OAAPermission.MetadataCreate, OAAPermission.MetadataDelete, OAAPermission.MetadataWrite, OAAPermission.MetadataRead])
-    custom_app.add_custom_permission("Manage portal users", [OAAPermission.MetadataCreate, OAAPermission.MetadataDelete, OAAPermission.MetadataWrite, OAAPermission.MetadataRead])
-    custom_app.add_custom_permission("Manage portal assets", [OAAPermission.MetadataCreate, OAAPermission.MetadataDelete, OAAPermission.MetadataWrite, OAAPermission.MetadataRead])
-    custom_app.add_custom_permission("Manage portal notifications", [OAAPermission.MetadataCreate, OAAPermission.MetadataDelete, OAAPermission.MetadataWrite, OAAPermission.MetadataRead])
-    custom_app.add_custom_permission("Manage scope mapping", [OAAPermission.MetadataCreate, OAAPermission.MetadataDelete, OAAPermission.MetadataWrite, OAAPermission.MetadataRead])
-    custom_app.add_custom_permission("Manage access profiles", [OAAPermission.MetadataCreate, OAAPermission.MetadataDelete, OAAPermission.MetadataWrite, OAAPermission.MetadataRead])
-    custom_app.add_custom_permission("Manage role mapping", [OAAPermission.MetadataCreate, OAAPermission.MetadataDelete, OAAPermission.MetadataWrite, OAAPermission.MetadataRead])
-    custom_app.add_custom_permission("Manage users", [OAAPermission.MetadataCreate, OAAPermission.MetadataDelete, OAAPermission.MetadataWrite, OAAPermission.MetadataRead])
-    custom_app.add_custom_permission("Manage groups", [OAAPermission.MetadataCreate, OAAPermission.MetadataDelete, OAAPermission.MetadataWrite, OAAPermission.MetadataRead])
-    custom_app.add_custom_permission("Manage system configurations", [OAAPermission.MetadataCreate, OAAPermission.MetadataDelete, OAAPermission.MetadataWrite, OAAPermission.MetadataRead])
-    custom_app.add_custom_permission("Manage security configurations", [OAAPermission.MetadataCreate, OAAPermission.MetadataDelete, OAAPermission.MetadataWrite, OAAPermission.MetadataRead])
-    custom_app.add_custom_permission("Manage email server settings", [OAAPermission.MetadataCreate, OAAPermission.MetadataDelete, OAAPermission.MetadataWrite, OAAPermission.MetadataRead])
-    custom_app.add_custom_permission("Manage external authentications", [OAAPermission.MetadataCreate, OAAPermission.MetadataDelete, OAAPermission.MetadataWrite, OAAPermission.MetadataRead])
-    
-    # Privilege mapping: index in string to permission name
-    privilege_map = {
-        0: "Manage APIs",
-        1: "Manage aliases",
-        2: "Manage policy templates",
-        3: "Activate / Deactivate APIs",
-        4: "Manage global policies",
-        5: "Manage threat protection configurations",
-        6: "Manage applications",
-        7: "Activate / Deactivate global policies",
-        8: "Publish API to service registry",
-        9: "Publish to API Portal",
-        10: "Manage scope mapping",
-        11: "Manage access profiles",
-        12: "Manage role mapping",
-        13: "Manage users",
-        14: "Manage groups",
-        15: "Manage system configurations",
-        16: "Manage security configurations",
-        17: "Manage email server settings",
-        18: "Manage external authentications"
-    }
-
-    # Define USers Custom Properties    
+    log.info("Defining user properties...")
+    # Define Users Custom Properties
     custom_app.property_definitions.define_local_user_property('firstName', OAAPropertyType.STRING)
     custom_app.property_definitions.define_local_user_property('lastName', OAAPropertyType.STRING)
-    custom_app.property_definitions.define_local_user_property('language', OAAPropertyType.STRING)
-    custom_app.property_definitions.define_local_user_property('type', OAAPropertyType.STRING)
-    custom_app.property_definitions.define_local_user_property('active', OAAPropertyType.BOOLEAN)
-    custom_app.property_definitions.define_local_user_property('allowDigestAuth', OAAPropertyType.BOOLEAN)
-    custom_app.property_definitions.define_local_user_property('emailAddresses', OAAPropertyType.STRING_LIST)
-    
-    #Get Token
-    try:
-        token = get_token()
-    except Exception as e:
-        print("Error getting token:", e)
+    custom_app.property_definitions.define_local_user_property('idpDispName', OAAPropertyType.STRING)
+    custom_app.property_definitions.define_local_user_property('localUser', OAAPropertyType.BOOLEAN)
+    custom_app.property_definitions.define_local_user_property('username', OAAPropertyType.STRING)
+    custom_app.property_definitions.define_local_user_property('email', OAAPropertyType.STRING)
 
-    #Add Users
-    response = get_ibm_webmethods_users(token)
-    for user in response['users']:
+    # Use cached authentication helper to get token and users JSON
+    try:
+        result = logging_in_extract_json()
+        # check if result contains "error"
+        if result.__contains__('ERROR'):
+            log.error("No result returned from logging_in_extract_json")
+            print("No result returned from logging_in_extract_json")
+            sys.exit(1)
+        else:
+            response = result
+            log.debug(f"logging_in_extract_json result: {response}")
+        log.info("Obtained authentication/users via logging_in_extract_json")
+    except Exception as e:
+        log.error(f"Error calling logging_in_extract_json: {e}")
+        sys.exit(1)
+    for user in response['userList']:
+        log.debug(f"Processing user: {user.get('username')}")
         # Add local user.
         new_user = custom_app.add_local_user(
-                                                user.get('loginId'),
-                                                unique_id=user.get('id')
-                                            )
+            user.get('username'),
+            unique_id=user.get('id')
+        )
+        log.debug(f"Added user: {user.get('username')} with ID: {user.get('id')}")
+        log.debug(f"User details: {user}")
         new_user.set_property('firstName', user.get('firstName'))
         new_user.set_property('lastName', user.get('lastName'))
-        new_user.set_property('type', user.get('type'))
-        new_user.set_property('active', user.get('active'))
-        new_user.set_property('allowDigestAuth', user.get('allowDigestAuth'))
-        new_user.set_property('emailAddresses', user.get('emailAddresses', []))
-
-    #add Groups
-    response = get_ibm_webmethods_groups(token)
-    for group in response['groups']:
-        # Add local group.
-        new_group = custom_app.add_local_group(group.get('name'), unique_id=group.get('id'))
-        new_group.set_property('description', group.get('description'))
-        new_group.set_property('type', group.get('type'))
-        new_group.set_property('systemDefined', group.get('systemDefined'))
-        new_group.set_property('name', group.get('name'))
-        # Add users to the group 
-        for user_id in group.get('userIds', []):
-            member = custom_app.local_users.get(user_id)
-            member.add_group(group.get('id'))
-
-    #add Teams/AccessProfiles
-    accessProfiles = get_ibm_webmethods_teams(token)
-    for profile in accessProfiles['accessProfiles']:
-        privilege_str = profile.get('privilege', '')
-        permissions = []
-        for idx, char in enumerate(privilege_str):
-            if char == '1' and idx in privilege_map:
-                permissions.append(privilege_map[idx])
-        # Add local role with mapped permissions
-        new_role = custom_app.add_local_role(profile.get('name'), unique_id=profile.get('id'))
-        new_role.set_property('description', profile.get('description'))
-        new_role.set_property('systemDefined', profile.get('systemDefined'))
-        new_role.set_property('id', profile.get('id'))    
-        new_role.add_permissions(permissions=permissions)
-        # assign roles to groups
-        group_ids = profile.get('groupIds', [])
-        for group_id in group_ids:
-            group = custom_app.local_groups.get(group_id)
-            if group:
-                group.add_role(profile.get('id'), apply_to_application=True)
+        new_user.is_active = True
+        idp_disp_name = user.get('idpDispName')
+        new_user.set_property('idpDispName', user.get('idpDispName'))
+        if idp_disp_name == "IBM webMethods iPaaS":
+            new_user.set_property('localUser', True)
+            log.debug(f"User {user.get('username')} set as localUser=True")
+        else:
+            new_user.set_property('localUser', False)
+            log.debug(f"User {user.get('username')} set as localUser=False")
+        new_user.set_property('email', user.get('email'))
+        # Create and assign roles to user
+        log.debug(f"Assigning roles {user.get('roles', [])} to user: {user.get('username')}")
+        for role in user.get('roles', []):
+            existing_role = custom_app.local_roles.get(role.get('id'))
+            log.debug(f"Processing role: {role.get('name')} for user: {user.get('username')}")
+            if existing_role is None:
+                log.debug(f"Role do not exist. Creating new role: {role.get('name')} with ID: {role.get('id')}")
+                new_role = custom_app.add_local_role(role.get('name'), unique_id=role.get('id'), permissions=None)
+                new_role.set_property('description', role.get('description'))
+                new_role.set_property('containerId', role.get('containerId'))
+                new_role.set_property('productRole', role.get('productRole'))
+                new_role.set_property('clientId', role.get('clientId'))
+                new_role.set_property('clientName', role.get('clientName'))
+                new_role.set_property('wellKnowSwagRealmRole', role.get('wellKnowSwagRealmRole'))
+            #add user to role
+            log.debug(f"Adding role: {role.get('name')} to user: {user.get('username')}")
+            new_user.add_role(role.get('id'), apply_to_application=True)
+    log.info("Users processed successfully.")
         
     #push data to Veza
+    log.info("Connecting to Veza...")
     veza_con = connect_to_veza()
     provider_name = "IBMWebMethods"
     provider = veza_con.get_provider(provider_name)
     if provider:
-        print("-- Found existing provider")
+        log.info("-- Found existing provider")
     else:
-        print(f"++ Creating Provider {provider_name}")
+        log.info(f"++ Creating Provider {provider_name}")
         provider = veza_con.create_provider(provider_name, "application")
-    print(f"-- Provider: {provider['name']} ({provider['id']})")
+    log.info(f"-- Provider: {provider['name']} ({provider['id']})")
 
     # Push the metadata payload:
 
@@ -234,16 +176,20 @@ def main():
         if response.get("warnings", None):
             # Veza may return warnings on a successful uploads. These are informational warnings that did not stop the processing
             # of the OAA data but may be important. Specifically identities that cannot be resolved will be returned here.
-            print("-- Push succeeded with warnings:")
+            log.info("-- Push succeeded with warnings")
+            print(f"-- Push succeeded with warnings")
             for e in response["warnings"]:
-                print(f"  - {e}")
+                log.debug(f"Warning during push: {e}")
+        else:
+            log.info("-- Push succeeded without warnings")
+            print(f"-- Push succeeded without warnings")
     except OAAClientError as e:
         # If there are any errors connecting to the Veza API or processing the payload the client will raise an `OAAClientError`
-        print(f"-- Error: {e.error}: {e.message} ({e.status_code})", file=sys.stderr)
+        log.error(f"-- Error: {e.error}: {e.message} ({e.status_code})")
         if hasattr(e, "details"):
             # Error details will have specifics on any issues encountered processing the payload
             for d in e.details:
-                print(f"  -- {d}", file=sys.stderr)
+                log.error(f"  -- {d}")
     return
 
 
